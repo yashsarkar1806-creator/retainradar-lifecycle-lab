@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%A1%3C/text%3E%3C/svg%3E">
+<title>RetainRadar Lifecycle Lab · RFM, cohorts, CLV and AI-assisted lifecycle planning</title>
+<meta name="description" content="In-browser CRM lifecycle lab: upload an orders CSV to get RFM segments, a cohort retention heatmap, simple CLV, a margin-safe lifecycle campaign plan and an AI-assisted subject-line lab.">
+<meta property="og:title" content="RetainRadar Lifecycle Lab">
+<meta property="og:description" content="RFM segments, cohort retention, CLV and an AI-assisted lifecycle campaign planner, all in your browser.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">CRM · Retention · Lifecycle marketing · On-device AI</p>
+    <h1>RetainRadar Lifecycle Lab</h1>
+    <p class="lede">Drop in an orders export and get <strong>RFM segments</strong>, a <strong>cohort retention heatmap</strong>, a simple <strong>CLV</strong>, and a <strong>lifecycle campaign plan</strong> per segment (onboarding, VIP, win-back) with margin guardrails and holdout sizing. Then pressure-test subject lines with rules and an optional <strong>on-device AI</strong> pass.</p>
+    <p class="notice">Everything runs in your browser. Your CSV never leaves this page. The demo uses <strong>synthetic</strong> orders for a <strong>fictional</strong> DTC tea brand, <em>Kettle &amp; Kin</em>.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="card" id="s-data">
+    <h2>1 · Orders data</h2>
+    <div class="two">
+      <div>
+        <p class="hint">One row per order (or per line item, which gets grouped by order ID). Needs a customer ID, an order date (YYYY-MM-DD, DD/MM/YYYY or MM/DD/YYYY, detected automatically) and an order value. Refunds and zero-value rows are excluded.</p>
+        <div class="actions">
+          <button class="primary" id="loadDemo">Load Kettle &amp; Kin demo</button>
+          <label class="file">Upload CSV<input type="file" id="file" accept=".csv,text/csv"></label>
+          <button class="ghost" id="dlDemo">Download demo CSV</button>
+        </div>
+        <label class="block">…or paste CSV
+          <textarea id="csv" spellcheck="false" placeholder="order_id,customer_id,order_date,revenue&#10;O1,C001,2026-01-04,52.40"></textarea>
+        </label>
+      </div>
+      <div>
+        <div class="grid2" id="mapping">
+          <label>Customer ID column<select id="m-customerId"></select></label>
+          <label>Order ID column (optional)<select id="m-orderId"></select></label>
+          <label>Order date column<select id="m-date"></select></label>
+          <label>Order value column<select id="m-revenue"></select></label>
+        </div>
+        <h3>Assumptions</h3>
+        <div class="grid2">
+          <label>Currency<select id="currency"><option value="A$">A$ (AUD)</option><option value="₹">₹ (INR)</option><option value="$">$ (USD)</option><option value="£">£ (GBP)</option></select></label>
+          <label>Gross margin %<input type="number" id="margin" value="60" min="5" max="95"></label>
+          <label>Churn window (days)<input type="number" id="churnWindow" value="180" min="30" max="720"></label>
+          <label>Max discount %<input type="number" id="maxDiscount" value="20" min="0" max="60"></label>
+          <label>Min margin after discount %<input type="number" id="minMargin" value="35" min="0" max="90"></label>
+          <label>Holdout %<input type="number" id="holdout" value="10" min="0" max="50"></label>
+          <label>Cost per send<input type="number" id="costPerSend" value="0.01" step="0.005" min="0"></label>
+          <label>Brand name<input type="text" id="brand" value="Kettle &amp; Kin"></label>
+        </div>
+        <div class="actions"><button class="primary" id="analyse">Analyse orders</button><span id="status" class="hint"></span></div>
+      </div>
+    </div>
+    <ul id="errors" class="errors" hidden></ul>
+  </section>
+
+  <div id="results" hidden>
+    <section class="card">
+      <h2>2 · Snapshot</h2>
+      <div class="kpis" id="kpis"></div>
+      <h3>Plain-English readout</h3>
+      <ul id="readout" class="readout"></ul>
+    </section>
+
+    <section class="card">
+      <h2>3 · RFM segments</h2>
+      <p class="hint">R and M are scored 1–5 by percentile (ties share a score). F uses fixed order-count bins (1, 2, 3, 4–5, 6+) because most DTC customers buy once. Segments come from an R × F grid; M ≥ 4 is flagged as high value.</p>
+      <div class="two">
+        <div>
+          <div class="legend"><span><i class="sw a"></i>% of customers</span><span><i class="sw b"></i>% of revenue</span></div>
+          <div id="segBars" class="segbars"></div>
+        </div>
+        <div>
+          <table class="grid" id="rfGrid" aria-label="Recency by frequency grid"></table>
+          <p class="hint">Grid cell = customer count. Columns: frequency score. Rows: recency score (5 = most recent).</p>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="segTable"><thead><tr><th>Segment</th><th>Customers</th><th>Revenue share</th><th>AOV</th><th>Avg orders</th><th>Avg days since order</th><th>High value</th><th>Next-12-mo gross profit*</th><th></th></tr></thead><tbody></tbody></table></div>
+      <p class="hint">*Forward value = segment AOV × annualised order rate × stay-active assumption × margin. It's a planning heuristic, not a fitted model.</p>
+      <div id="segDetail" class="seg-detail" hidden></div>
+      <div class="actions"><button id="dlCustomers">Download customers + segments CSV</button></div>
+    </section>
+
+    <section class="card">
+      <h2>4 · Cohort retention</h2>
+      <p class="hint">Share of each first-order month's customers who ordered again in month +k. Blank cells are months that haven't happened yet. The last row is a size-weighted average.</p>
+      <div class="table-wrap"><table id="cohortTable" class="heat"></table></div>
+    </section>
+
+    <section class="card">
+      <h2>5 · Customer lifetime value</h2>
+      <div class="two">
+        <div class="kpis small" id="clvKpis"></div>
+        <div>
+          <p class="hint"><strong>Simple CLV</strong> = AOV × orders per year × gross margin × expected lifespan. Lifespan = 1 ÷ annual churn (capped at 0.5–5 years). Churn = share of customers older than the churn window who haven't ordered within it. Use it to set a CAC ceiling (3:1 LTV:CAC).</p>
+          <label>Override lifespan (years, blank = estimated)<input type="number" id="lifespan" step="0.25" min="0.25" max="10"></label>
+          <p class="hint">Median days between repeat orders: <strong id="gap">–</strong> (75th percentile <span id="gap75">–</span>). This sets reminder and win-back timing below.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>6 · Lifecycle campaign planner</h2>
+      <p class="hint">One program per segment, ranked by estimated net incremental gross profit for one campaign cycle: incremental orders × AOV × (margin − discount), minus the discount handed to people who'd have bought anyway, minus send costs. Base rates and lifts are editable planning assumptions in <code>lib/engine.js</code>. Validate them with the holdout.</p>
+      <div class="table-wrap"><table id="planTable"><thead><tr><th>#</th><th>Segment</th><th>Program &amp; goal</th><th>Timing</th><th>Offer</th><th>Channel</th><th>Net incr. profit</th><th>Measurement</th></tr></thead><tbody></tbody></table></div>
+      <div class="actions"><button id="dlPlan">Download plan (Markdown)</button><button id="copyPlan" class="ghost">Copy plan</button></div>
+    </section>
+
+    <section class="card">
+      <h2>7 · Subject-line lab <span class="tag">rules + transformers.js</span></h2>
+      <div class="two">
+        <div>
+          <label>Target segment<select id="subjSeg"></select></label>
+          <label class="block">Subject lines (one per line, use {first_name} for personalisation)
+            <textarea id="subjects" class="short" spellcheck="false"></textarea>
+          </label>
+          <div class="actions">
+            <button class="primary" id="scoreSubj">Score lines</button>
+            <button id="draftSubj">Suggest lines</button>
+          </div>
+        </div>
+        <div>
+          <p class="hint"><strong>Rules</strong> score length for mobile, personalisation, numbers, spam triggers, caps and emoji, and whether the message angle fits the segment (for example, no discount-led lines to Champions).</p>
+          <p class="hint"><strong>Optional AI pass</strong> runs open Hugging Face models <em>in your browser</em> with <a href="https://huggingface.co/docs/transformers.js" target="_blank" rel="noopener">transformers.js</a>: <a href="https://huggingface.co/Xenova/mobilebert-uncased-mnli" target="_blank" rel="noopener">Xenova/mobilebert-uncased-mnli</a> uses zero-shot classification to label each line's angle, and to rank a bank of 21 template ideas by how well they fit the chosen segment (blended 75% rules, 25% AI). The first run downloads about 25 MB, which the browser then caches. If the model can't load, the rule-based results still work and the template suggestions are used instead.</p>
+          <div class="actions">
+            <button id="runAI">Run AI angle check</button>
+            <button id="aiDraft">AI pick best ideas</button>
+          </div>
+          <p id="aiStatus" class="hint" aria-live="polite"></p>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="subjTable" hidden><thead><tr><th>Line</th><th>Score</th><th>Rule angle</th><th>AI angle</th><th>Flags &amp; tips</th></tr></thead><tbody></tbody></table></div>
+    </section>
+  </div>
+</main>
+
+<footer class="wrap foot">
+  <p>Built by <a href="https://github.com/yashsarkar1806-creator">Yash Sarkar</a> as a portfolio project. Demo data is synthetic and the brand is fictional. Models keep their own licences (see the model cards). <a href="https://github.com/yashsarkar1806-creator/retainradar-lifecycle-lab">Source on GitHub</a> · MIT licence.</p>
+</footer>
+<script src="lib/engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

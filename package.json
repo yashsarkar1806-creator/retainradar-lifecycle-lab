@@ -1,0 +1,8 @@
+{
+  "name": "retainradar-lifecycle-lab",
+  "version": "1.0.0",
+  "description": "In-browser CRM lifecycle lab: RFM segments, cohort retention, CLV and an AI-assisted lifecycle campaign planner",
+  "license": "MIT",
+  "author": "Yash Sarkar",
+  "scripts": { "test": "node --test" }
+}
